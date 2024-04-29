@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
 import aiohttp
@@ -85,26 +86,44 @@ class SiteWatcher(CronRunner):
                 log.exception("Exception trying to suspend watcher {} {}".format(target.name, url_config))
 
     @aiohttp_retry
-    async def _check_url_inner(self, target: WatchTarget, url_config: WatchURL):
+    async def _check_url_inner(self, target: WatchTarget, url_config: WatchURL) -> tuple[Optional[str], str]:
         async with self._session.get(
             url_config.url,
             headers=make_browser_headers(),
             timeout=ClientTimeout(total=self._config.site_watcher.request_timeout),
             ssl=False,
         ) as response:
-            response.raise_for_status()
+            if response.status > 499 or response.status < 400:
+                response.raise_for_status()
             if url_config.watch_type == WatchType.TEXT:
-                result = await self._check_text(response, url_config.value)
+                return await self._check_text(response, url_config.value), await response.text()
             else:
                 raise RuntimeError("Unexpected watch type {}".format(url_config.watch_type))
-            if result is not None:
-                log.info("Site {}: {}. Notifying".format(url_config.url, result))
-                await self._notify(target, url_config, result)
+
+    def _log_site_content(self, log_dir: Path, text: str, url_config: WatchURL):
+        log_dir.mkdir(parents=True, exist_ok=True)
+        n_try = 0
+        while True:
+            try_suffix = "-{}".format(n_try) if n_try else ""
+            log_file = log_dir / f"{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}{try_suffix}.log"
+            if not log_file.exists():
+                break
+        with open(log_file, "w") as f:
+            f.write("<!-- FROM {} -->\n\n".format(url_config.url))
+            f.write(text)
 
     async def _check_url(self, target: WatchTarget, url_config: WatchURL):
         log.info(f"Checking site {url_config.url} for '{url_config.value}' {url_config.watch_type}")
         try:
-            await self._check_url_inner(target, url_config)
+            result, resp_text = await self._check_url_inner(target, url_config)
+            if result is not None:
+                log.info("Site {}: {}. Notifying".format(url_config.url, result))
+                try:
+                    if target.log_dir is not None:
+                        self._log_site_content(target.log_dir, resp_text, url_config)
+                except Exception:
+                    log.exception("Exception while saving site {} content".format(url_config.url))
+                await self._notify(target, url_config, result)
         except Exception:
             log.exception("Exception while checking url {}".format(url_config.url))
 

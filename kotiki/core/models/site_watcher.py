@@ -29,6 +29,7 @@ class WatchTarget:
     contacts: list[str]
     urls: list[WatchURL]
     suspension_time: Optional[timedelta] = None
+    log_dir: Optional[Path] = None
 
 
 @dataclass
