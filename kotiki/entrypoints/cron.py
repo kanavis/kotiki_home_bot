@@ -56,16 +56,11 @@ async def cron_main():
             NotificationExecutor(config=config, bot=bot, manager=notifications_manager),
         )
 
-        async def _run(_executor: CronRunner):
+        for executor in executors:
             try:
-                log.info("Running cron executor {}".format(_executor.__class__.__name__))
-                await _executor.run()
+                await executor.run()
             except Exception:
-                log.exception("Exception in executor {}".format(_executor.__class__.__name__))
-
-        async with asyncio.TaskGroup() as task_group:
-            for executor in executors:
-                task_group.create_task(_run(executor))
+                log.exception("Exception in executor {}".format(executor.__class__.__name__))
 
 
 if __name__ == "__main__":
