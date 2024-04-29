@@ -92,6 +92,7 @@ class SiteWatcher(CronRunner):
             timeout=ClientTimeout(total=self._config.site_watcher.request_timeout),
             ssl=False,
         ) as response:
+            response.raise_for_status()
             if url_config.watch_type == WatchType.TEXT:
                 result = await self._check_text(response, url_config.value)
             else:
