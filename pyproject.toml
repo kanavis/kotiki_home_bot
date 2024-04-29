@@ -1,0 +1,18 @@
+[project]
+name = "kotiki-home-bot"
+version = "0.0.1"
+dependencies = [
+    "adaptix == 3.0.0b5",
+    "aiogram >= 3.5",
+    "pyaml >= 24",
+    "yarl >= 1.9.4",
+    "tenacity >= 8",
+    "aiohttp >= 3.9",
+    "sqlalchemy >= 2.0",
+    "alembic >= 1.13",
+    "aiosqlite >= 0.20",
+    "asyncpg >= 0.29.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["kotiki*"]
