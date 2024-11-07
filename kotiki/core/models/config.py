@@ -40,8 +40,15 @@ class Config:
     contacts: dict[str, Contact]
 
     db: PgConfig | SqliteConfig
+    sensors_api: str
 
     site_watcher: SiteWatcherConfig = field(default_factory=SiteWatcherConfig)
+
+    def is_known(self, chat_id: str) -> bool:
+        for contact in self.contacts.values():
+            if contact.id == chat_id:
+                return True
+        return False
 
 
 retort = base_retort
