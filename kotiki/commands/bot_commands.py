@@ -43,5 +43,6 @@ class BotCommands:
             log.exception("Getting data from sensors API")
             await message.answer(html.bold("Error: {}".format(e)), parse_mode=ParseMode.HTML)
         else:
-            response = ["  {}: {}".format(x["name"], x["value"]) for x in data["measurements"]]
+            print(data)
+            response = ["  {}: {}".format(name, value) for name, value in data["measurements"].items()]
             await message.answer("Sensor {} readings:\n{}".format(command.args, "\n".join(response)))
