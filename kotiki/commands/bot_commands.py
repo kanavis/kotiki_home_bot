@@ -17,7 +17,11 @@ class BotCommands:
         self.sensors_api = sensors_api
         self.dp = Dispatcher()
         self.dp.message(CommandStart())(self.command_start_handler)
+        self._aliases = {
+            "sensor": self.command_sensor_handler,
+        }
         self.dp.message(Command("sensor"))(self.command_sensor_handler)
+        self.dp.message()(self.message_handler)
 
     async def start_polling(self, bot: Bot):
         await self.dp.start_polling(bot)
@@ -31,7 +35,7 @@ class BotCommands:
                 message.text, message.chat.id, message.from_user.username,
             ))
             return
-        log.info("Command '{}' for {} {}".format(
+        log.info("Command '{}' for {} '{}'".format(
             message.text, message.chat.id, message.from_user.username,
         ))
         if command.args is None or " " in command.args:
@@ -46,3 +50,9 @@ class BotCommands:
             print(data)
             response = ["  {}: {}".format(name, value) for name, value in data["measurements"].items()]
             await message.answer("Sensor {} readings:\n{}".format(command.args, "\n".join(response)))
+
+    async def message_handler(self, message: Message):
+        log.info("Message {} from {} '{}'".format(message.text, message.chat.id, message.from_user.username))
+        for alias in self.config.aliases:
+            if message.text.lower() == alias.alias:
+                await self._aliases[alias.command](message, CommandObject(command=alias.command, args=alias.arg))

@@ -35,6 +35,13 @@ class SiteWatcherConfig:
 
 
 @dataclass
+class Alias:
+    alias: str
+    command: str
+    arg: str | None = None
+
+
+@dataclass
 class Config:
     bot_token: str
     contacts: dict[str, Contact]
@@ -43,6 +50,8 @@ class Config:
     sensors_api: str
 
     site_watcher: SiteWatcherConfig = field(default_factory=SiteWatcherConfig)
+
+    aliases: list[Alias] = field(default_factory=list)
 
     def is_known(self, chat_id: str) -> bool:
         for contact in self.contacts.values():
