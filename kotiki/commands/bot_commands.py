@@ -56,3 +56,6 @@ class BotCommands:
         for alias in self.config.aliases:
             if message.text.strip().lower() == alias.alias:
                 await self._aliases[alias.command](message, CommandObject(command=alias.command, args=alias.arg))
+                break
+        else:
+            await message.answer("Ne ponimat")
