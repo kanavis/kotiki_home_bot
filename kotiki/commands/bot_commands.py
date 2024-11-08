@@ -54,5 +54,5 @@ class BotCommands:
     async def message_handler(self, message: Message):
         log.info("Message {} from {} '{}'".format(message.text, message.chat.id, message.from_user.username))
         for alias in self.config.aliases:
-            if message.text.lower() == alias.alias:
+            if message.text.strip().lower() == alias.alias:
                 await self._aliases[alias.command](message, CommandObject(command=alias.command, args=alias.arg))
