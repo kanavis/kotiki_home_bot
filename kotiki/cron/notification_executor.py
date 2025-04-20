@@ -45,3 +45,6 @@ class NotificationExecutor(CronRunner):
                 await self._send(notification)
             except Exception:
                 log.exception(f"Exception sending notification: {notification}")
+
+    def __str__(self):
+        return "NotificationExecutor"
