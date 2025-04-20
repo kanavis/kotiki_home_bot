@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import logging
+import os
 from pathlib import Path
 
 import aiohttp
@@ -30,7 +31,8 @@ async def cron_main():
 
     args = parser.parse_args()
 
-    setup_logging(debug=args.debug, quiet=args.quiet)
+    debug = args.debug or "DEBUG" in os.environ
+    setup_logging(debug=debug, quiet=args.quiet)
     config = parse_config(config_path=args.config_file)
     bot = create_bot(config=config)
     db = create_db(config=config)
@@ -57,6 +59,7 @@ async def cron_main():
         )
 
         for executor in executors:
+            log.debug("Running task {}".format(executor))
             try:
                 await executor.run()
             except Exception:

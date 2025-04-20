@@ -57,6 +57,8 @@ class SiteWatcher(CronRunner):
         if value not in text:
             return "Message '{}' is not in the site's text anymore".format(value)
 
+        return None
+
     def _suspend_timedelta(self, target: WatchTarget) -> timedelta:
         return coalesce(target.suspension_time, self._config.site_watcher.suspension_time)
 
@@ -124,6 +126,8 @@ class SiteWatcher(CronRunner):
                 except Exception:
                     log.exception("Exception while saving site {} content".format(url_config.url))
                 await self._notify(target, url_config, result)
+            else:
+                log.debug("Site {}: no need to notify".format(url_config.url))
         except Exception:
             log.exception("Exception while checking url {}".format(url_config.url))
 
@@ -131,6 +135,7 @@ class SiteWatcher(CronRunner):
         suspensions = await self._manager.get_suspensions()
         async with asyncio.TaskGroup() as task_group:
             for target in self._watcher_config.targets:
+                log.debug("Checking target {} {}".format(target.name, target.urls))
                 if not target.contacts:
                     log.warning("No contacts configured for watch '{}'".format(target.name))
                 for url_config in target.urls:
@@ -138,3 +143,8 @@ class SiteWatcher(CronRunner):
                         target.name, url_config.url, url_config.value, url_config.watch_type.value,
                     ):
                         task_group.create_task(self._check_url(target, url_config))
+                    else:
+                        log.debug("Site is suspended, not checking '{}'".format(target.name))
+
+    def __str__(self):
+        return "SiteWatcher {} targets".format(len(self._watcher_config.targets))
