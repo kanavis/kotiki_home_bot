@@ -53,6 +53,10 @@ class Config:
 
     aliases: list[Alias] = field(default_factory=list)
 
+    api_secret: str = "kotiki-cctl-secret-8l33ywd6eopck7fXCR0A"
+    api_port: int = 8080
+    api_ip: str = "0.0.0.0"
+
     def is_known(self, chat_id: str) -> bool:
         for contact in self.contacts.values():
             if contact.id == chat_id:

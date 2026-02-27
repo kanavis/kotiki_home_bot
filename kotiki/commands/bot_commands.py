@@ -1,14 +1,38 @@
 import logging
+import re
 
 from aiogram import Dispatcher, html, Bot
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.types import Message
 
-from kotiki.api_client.client import FastAPIClient
+from kotiki.api.bot_api import cctl_manager
+from kotiki.core.api_client import FastAPIClient
 from kotiki.core.models.config import Config
 
 log = logging.getLogger(__name__)
+
+# cctl command patterns: c{number}, ca, c{number}s, cas
+_CCTL_START_ONE = re.compile(r"^c(\d+)$")
+_CCTL_STOP_ONE = re.compile(r"^c(\d+)s$")
+
+
+def _format_cctl_results(results: list[dict], action: str, *, client_id: str | None = None) -> str:
+    """Format cctl command results for chat. If client_id given and no results, show specific message."""
+    if not results:
+        if client_id is not None:
+            return f"No cctl socket with id {client_id} connected"
+        return "No cctl sockets connected"
+    lines = []
+    for r in results:
+        cid = r["client_id"]
+        if r["ok"]:
+            lines.append(f"  cctl {cid}: ok")
+        elif r["error"]:
+            lines.append(f"  cctl {cid}: {r['error']}")
+        else:
+            lines.append(f"  cctl {cid}: unknown result {r}")
+    return f"{action}:\n" + "\n".join(lines)
 
 
 class BotCommands:
@@ -54,6 +78,28 @@ class BotCommands:
 
     async def message_handler(self, message: Message):
         log.info("Message {} from {} '{}'".format(message.text, message.chat.id, message.from_user.username))
+
+        text = message.text.strip().lower()
+        if self.config.is_known(str(message.chat.id)):
+            if text == "cas":
+                results = await cctl_manager.broadcast({"start": False})
+                await message.answer(_format_cctl_results(results, "Stop"))
+                return
+            if text == "ca":
+                results = await cctl_manager.broadcast({"start": True})
+                await message.answer(_format_cctl_results(results, "Start"))
+                return
+            if m := _CCTL_STOP_ONE.match(text):
+                client_id = m.group(1)
+                results = await cctl_manager.send_to_id(client_id, {"start": False})
+                await message.answer(_format_cctl_results(results, f"Stop cctl {client_id}", client_id=client_id))
+                return
+            if m := _CCTL_START_ONE.match(text):
+                client_id = m.group(1)
+                results = await cctl_manager.send_to_id(client_id, {"start": True})
+                await message.answer(_format_cctl_results(results, f"Start cctl {client_id}", client_id=client_id))
+                return
+
         for alias in self.config.aliases:
             if message.text.strip().lower() == alias.alias:
                 await self._aliases[alias.command](message, CommandObject(command=alias.command, args=alias.arg))
