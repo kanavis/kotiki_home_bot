@@ -1,10 +1,9 @@
 import asyncio
 import hashlib
 import logging
-import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
@@ -36,8 +35,12 @@ class CctlConnection:
     def deliver_response(self, data: dict) -> None:
         """Deliver received response to waiter if any."""
         if self.pending_response and not self.pending_response.done():
-            self.pending_response.set_result(data)
-            self.pending_response = None
+            try:
+                self.pending_response.set_result(data)
+            except Exception as e:
+                log.warning("cctl %s: failed to deliver response: %s", self.client_id, e)
+            finally:
+                self.pending_response = None
 
 
 class CctlConnectionManager:
@@ -45,6 +48,11 @@ class CctlConnectionManager:
 
     def __init__(self):
         self._connections: dict[str, set[CctlConnection]] = defaultdict(set)
+        self._on_unsolicited_error: Optional[Callable[[str, dict], Awaitable[None]]] = None
+
+    def set_on_unsolicited_error(self, callback: Callable[[str, dict], Awaitable[None]]) -> None:
+        """Set callback for errors received outside response-waiting context. Called with (client_id, error_data)."""
+        self._on_unsolicited_error = callback
 
     def register(self, client_id: str, connection: CctlConnection) -> None:
         self._connections[client_id].add(connection)
@@ -69,6 +77,12 @@ class CctlConnectionManager:
             await conn.websocket.send_json(payload)
             try:
                 response = await asyncio.wait_for(future, timeout=CCTL_RESPONSE_TIMEOUT)
+                if not isinstance(response, dict):
+                    log.warning("cctl %s: invalid response format (expected dict), got %s", client_id, type(response).__name__)
+                    return (
+                        {"client_id": client_id, "ok": False, "response": None, "error": "invalid response format"},
+                        False,
+                    )
                 if "error" in response:
                     return (
                         {"client_id": client_id, "ok": False, "response": response, "error": response["error"]},
@@ -135,17 +149,40 @@ async def api_root():
 
 
 async def _receive_loop(connection: CctlConnection) -> None:
-    """Receive messages from client and deliver to pending response waiter."""
-    try:
-        while True:
+    """Receive messages from client and deliver to pending response waiter. Never exits except on disconnect."""
+    while True:
+        try:
             data = await connection.websocket.receive_json()
+        except WebSocketDisconnect:
+            break
+        except Exception as e:
+            log.warning("cctl %s: invalid message format (expected JSON): %s", connection.client_id, e)
+            if connection.pending_response and not connection.pending_response.done():
+                connection.pending_response.set_result({"error": "invalid message format"})
+                connection.pending_response = None
+            continue
+        try:
+            if not isinstance(data, dict):
+                log.warning("cctl %s: invalid message type (expected dict), got %s", connection.client_id, type(data).__name__)
+                data = {"error": "invalid message format"}
+            had_waiter = connection.pending_response is not None
             connection.deliver_response(data)
-    except WebSocketDisconnect:
-        pass
-    except Exception as e:
-        log.warning("cctl receive error for %s: %s", connection.client_id, e)
-        if connection.pending_response and not connection.pending_response.done():
-            connection.pending_response.set_exception(e)
+            # Unsolicited error: no one was waiting, but we got {"error": "..."}
+            if not had_waiter and "error" in data:
+                cb = cctl_manager._on_unsolicited_error
+                if cb:
+                    try:
+                        await cb(connection.client_id, data)
+                    except Exception as e:
+                        log.warning("cctl unsolicited_error callback failed for %s: %s", connection.client_id, e)
+        except Exception as e:
+            log.warning("cctl %s: error handling message: %s", connection.client_id, e)
+            if connection.pending_response and not connection.pending_response.done():
+                try:
+                    connection.pending_response.set_result({"error": str(e)})
+                except Exception:
+                    connection.pending_response.set_exception(e)
+                connection.pending_response = None
 
 
 @app.websocket("/bot_api/cctl/{hash}/{id}")
@@ -167,25 +204,15 @@ async def cctl_websocket(
     recv_task = asyncio.create_task(_receive_loop(connection))
 
     try:
-        while True:
-            # Send dummy events periodically
-            for i in range(5):
-                event = {
-                    "type": "dummy",
-                    "seq": i + 1,
-                    "payload": {"message": f"Dummy event {i + 1}", "ts": time.time()},
-                }
-                await websocket.send_json(event)
-                await asyncio.sleep(2)
-    except WebSocketDisconnect:
-        log.info("cctl WebSocket disconnected: id=%s", id)
+        await recv_task
     except Exception as e:
-        log.exception("cctl WebSocket error: %s", e)
+        log.warning("cctl %s: websocket handler error: %s", id, e)
+    finally:
+        log.info("cctl WebSocket disconnected: id=%s", id)
         try:
             await websocket.close()
         except Exception:
             pass
-    finally:
         recv_task.cancel()
         try:
             await recv_task

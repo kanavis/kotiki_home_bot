@@ -11,6 +11,7 @@ from kotiki.core.models.retort import base_retort
 @dataclass
 class Contact:
     id: str
+    send_errors: bool = False
 
 
 @dataclass
