@@ -42,6 +42,14 @@ class CctlConnection:
             finally:
                 self.pending_response = None
 
+    def __hash__(self) -> int:
+        return id(self)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, CctlConnection):
+            return NotImplemented
+        return id(self) == id(other)
+
 
 class CctlConnectionManager:
     """Tracks cctl WebSocket connections and supports sending commands with response waiting."""
